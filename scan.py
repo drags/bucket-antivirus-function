@@ -131,8 +131,7 @@ def set_av_metadata(s3_object, scan_result, scan_signature, timestamp):
     )
 
 
-def set_av_tags(s3_object, scan_result, scan_signature, timestamp):
-    s3_client = boto3.client("s3")
+def set_av_tags(s3_client, s3_object, scan_result, scan_signature, timestamp):
     curr_tags = s3_client.get_object_tagging(
         Bucket=s3_object.bucket_name, Key=s3_object.key
     )["TagSet"]
@@ -199,8 +198,10 @@ def sns_scan_results(
         },
     )
 
+
 def download_clamav_databases():
     s3_client = boto3.client("s3")
+    s3 = boto3.resource("s3")
     to_download = clamav.update_defs_from_s3(
         s3_client, AV_DEFINITION_S3_BUCKET, AV_DEFINITION_S3_PREFIX
     )
@@ -212,20 +213,23 @@ def download_clamav_databases():
         s3.Bucket(AV_DEFINITION_S3_BUCKET).download_file(s3_path, local_path)
         print("Downloading definition file %s complete!" % (local_path))
 
+
 def remove_file(file_path):
     try:
         os.remove(file_path)
     except OSError:
         pass
 
+
 def publish_results(s3_object, scan_result, scan_signature):
     result_time = get_timestamp()
     sns_client = boto3.client("sns")
+    s3_client = boto3.client("s3")
     ENV = os.getenv("ENV", "")
     # Set the properties on the object with the scan results
     if "AV_UPDATE_METADATA" in os.environ:
         set_av_metadata(s3_object, scan_result, scan_signature, result_time)
-    set_av_tags(s3_object, scan_result, scan_signature, result_time)
+    set_av_tags(s3_client, s3_object, scan_result, scan_signature, result_time)
 
     # Publish the scan results
     if AV_STATUS_SNS_ARN not in [None, ""]:
@@ -241,6 +245,7 @@ def publish_results(s3_object, scan_result, scan_signature):
     metrics.send(
         env=ENV, bucket=s3_object.bucket_name, key=s3_object.key, status=scan_result
     )
+
 
 def lambda_handler(event, context):
     s3 = boto3.resource("s3")
@@ -290,6 +295,7 @@ def lambda_handler(event, context):
         delete_s3_object(s3_object)
     stop_scan_time = get_timestamp()
     print("Script finished at %s\n" % stop_scan_time)
+
 
 def str_to_bool(s):
     return bool(strtobool(str(s)))
